@@ -14,7 +14,17 @@ export function load({ runtime, options, config }) {
     runtime.eta = (name, data) => eta.render(name, data)
 }
 
-export function render({ entity, options, runtime }) {
+export async function render({ entity, options, runtime }) {
     const name = path.relative(options.layoutsFolder, entity.layout.uri).replace(/\.eta$/, '')
-    return runtime.eta(name, runtime)
+    try {
+        return await runtime.eta(name, runtime)
+    } catch (err) {
+        // Eta attaches the template `path` and (for compile errors) a line
+        // pulled out of the error message; surface them in the format the
+        // engine logger expects.
+        err.layoutUri ??= entity.layout.uri
+        const match = typeof err.message === 'string' && err.message.match(/at line (\d+)/i)
+        if (match && err.line == null) err.line = Number(match[1])
+        throw err
+    }
 }
