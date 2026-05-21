@@ -15,7 +15,13 @@ export function load({ runtime, options, config }) {
 }
 
 export async function render({ entity, options, runtime }) {
-    const name = path.relative(options.layoutsFolder, entity.layout.uri).replace(/\.eta$/, '')
+    // Pass the name including the `.eta` extension. Eta's name resolution
+    // uses path.extname() to decide whether to append its own extname —
+    // for a layout like `franchises.html-pdf.eta`, stripping `.eta` would
+    // leave `franchises.html-pdf`, whose path.extname() is `.html-pdf` (not
+    // empty), so Eta would think the extension is already there and try
+    // to load `franchises.html-pdf` verbatim — and fail.
+    const name = path.relative(options.layoutsFolder, entity.layout.uri)
     try {
         return await runtime.eta(name, runtime)
     } catch (err) {
