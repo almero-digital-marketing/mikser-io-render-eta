@@ -2,6 +2,8 @@
 
 [Eta](https://www.npmjs.com/package/eta) renderer for [Mikser](https://github.com/almero-digital-marketing/mikser-io). Renders entities whose layout uses the `.eta` template engine.
 
+Mikser doesn't pick your template engine for you — install the renderer that matches the syntax your team already knows. Eta is the small, fast, modern descendant of EJS — embedded JavaScript with sane defaults and async support. Mix freely with other engines in the same project (`.eta`, `.hbs`, `.liquid` can all coexist).
+
 ## Install
 
 ```bash
