@@ -19,6 +19,6 @@
     "mikser-io": "^7.0.0"
   },
   "dependencies": {
-    "eta": "^3.5.0"
+    "eta": "^4.6.0"
   }
 }
