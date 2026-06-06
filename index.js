@@ -1,29 +1,28 @@
 import { Eta } from 'eta'
-import path from 'node:path'
 
 let eta
 
 export function load({ runtime, options, config }) {
     if (!eta) {
+        // `views` still points at the layouts folder so Eta's own
+        // `<% include() %>` and `layout` directives can resolve
+        // partials from disk. The top-level layout itself is rendered
+        // from `entity.layout.content` (populated by the layouts
+        // plugin and stripped of YAML by front-matter) — single source
+        // of truth for layout bodies.
         eta = new Eta({
             views: options.layoutsFolder,
             cache: !options.watch,
             ...config,
         })
     }
-    runtime.eta = (name, data) => eta.render(name, data)
+    runtime.eta = (source, data) => eta.renderString(source, data)
 }
 
-export async function render({ entity, options, runtime }) {
-    // Pass the name including the `.eta` extension. Eta's name resolution
-    // uses path.extname() to decide whether to append its own extname —
-    // for a layout like `franchises.html-pdf.eta`, stripping `.eta` would
-    // leave `franchises.html-pdf`, whose path.extname() is `.html-pdf` (not
-    // empty), so Eta would think the extension is already there and try
-    // to load `franchises.html-pdf` verbatim — and fail.
-    const name = path.relative(options.layoutsFolder, entity.layout.uri)
+export async function render({ entity, runtime }) {
+    const source = entity.layout.content ?? ''
     try {
-        return await runtime.eta(name, runtime)
+        return await runtime.eta(source, runtime)
     } catch (err) {
         // Eta attaches the template `path` and (for compile errors) a line
         // pulled out of the error message; surface them in the format the
