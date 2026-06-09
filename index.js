@@ -1,14 +1,21 @@
 import { Eta } from 'eta'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
 let eta
 
-// Match Eta's include directives in source: `<% include('name', …) %>`,
-// `<%- include(...) %>`, `<%~ includeAsync(...) %>`, etc. The first string
-// argument is the partial name as Eta sees it — a path relative to
-// `views` (the layouts folder), without extension. That same identifier
-// is what the layouts plugin uses as the in-memory map key, so we can
-// look up the partial's catalog entity id directly.
-const ETA_INCLUDE_RE = /<%[-~_=]?\s*include(?:Async)?\s*\(\s*['"`]([^'"`]+)['"`]/g
+// Per-render context propagated through Eta's async chain via Node's
+// AsyncLocalStorage. The render() function below sets the context;
+// the wrapped eta.render / eta.renderAsync (called by compiled
+// templates for each include) read it back to report partial usage
+// to the engine.
+const renderContext = new AsyncLocalStorage()
+
+function trackPartial(name) {
+    const ctx = renderContext.getStore()
+    if (!ctx?.track || !ctx.layouts || !name) return
+    const layout = ctx.layouts[name]
+    if (layout?.id) ctx.track.partial(layout.id)
+}
 
 export function load({ runtime, options, config }) {
     if (!eta) {
@@ -23,29 +30,45 @@ export function load({ runtime, options, config }) {
             cache: !options.watch,
             ...config,
         })
+
+        // Wrap Eta's per-invocation include resolution. Compiled
+        // template bodies generate:
+        //
+        //   let include      = (t,d) => this.render(t, ...)
+        //   let includeAsync = (t,d) => this.renderAsync(t, ...)
+        //
+        // and call them for each `<%~ include('name') %>` /
+        // `<%~ includeAsync('name') %>` directive at render time —
+        // even when the partial template itself is a cache hit.
+        // Wrapping these captures partial usage per render invocation,
+        // which is the right granularity: each entity using a partial
+        // gets the dep edge recorded against its own snapshot.
+        const _render = eta.render.bind(eta)
+        eta.render = function (name, data, opts) {
+            trackPartial(name)
+            return _render(name, data, opts)
+        }
+        const _renderAsync = eta.renderAsync.bind(eta)
+        eta.renderAsync = function (name, data, opts) {
+            trackPartial(name)
+            return _renderAsync(name, data, opts)
+        }
     }
     runtime.eta = (source, data) => eta.renderString(source, data)
 }
 
 export async function render({ entity, runtime, state, track }) {
     const source = entity.layout.content ?? ''
-    // Report partial-edge deps to the engine BEFORE running the template
-    // so a render error doesn't lose the tracking. The layouts plugin
-    // exposes its name → entity map at `state.layouts.layouts`; we
-    // resolve each include's name to the corresponding catalog id.
-    if (track && state?.layouts?.layouts) {
-        const layouts = state.layouts.layouts
-        const seen = new Set()
-        for (const match of source.matchAll(ETA_INCLUDE_RE)) {
-            const name = match[1]
-            if (seen.has(name)) continue
-            seen.add(name)
-            const layout = layouts[name]
-            if (layout?.id) track.partial(layout.id)
-        }
-    }
+    const layouts = state?.layouts?.layouts ?? {}
     try {
-        return await runtime.eta(source, runtime)
+        // Establish the render context BEFORE evaluating the
+        // template. Any internal include() / includeAsync() calls
+        // inherit it through the async chain and report their partial
+        // name to the engine's track via the wrapped methods above.
+        return await renderContext.run(
+            { track, layouts },
+            () => runtime.eta(source, runtime),
+        )
     } catch (err) {
         // Eta attaches the template `path` and (for compile errors) a line
         // pulled out of the error message; surface them in the format the
