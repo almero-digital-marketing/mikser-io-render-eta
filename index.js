@@ -43,15 +43,15 @@ export function load({ runtime, options, config }) {
         // Wrapping these captures partial usage per render invocation,
         // which is the right granularity: each entity using a partial
         // gets the dep edge recorded against its own snapshot.
-        const _render = eta.render.bind(eta)
+        const originalRender = eta.render.bind(eta)
         eta.render = function (name, data, opts) {
             trackPartial(name)
-            return _render(name, data, opts)
+            return originalRender(name, data, opts)
         }
-        const _renderAsync = eta.renderAsync.bind(eta)
+        const originalRenderAsync = eta.renderAsync.bind(eta)
         eta.renderAsync = function (name, data, opts) {
             trackPartial(name)
-            return _renderAsync(name, data, opts)
+            return originalRenderAsync(name, data, opts)
         }
     }
     runtime.eta = (source, data) => eta.renderString(source, data)
