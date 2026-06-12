@@ -79,3 +79,8 @@ export async function render({ entity, runtime, state, track }) {
         throw err
     }
 }
+
+// v9 factory — ADR-0010.
+export function renderEta(options = {}) {
+    return { name: options.name ?? 'eta', options, load, render }
+}
