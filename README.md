@@ -14,16 +14,21 @@ npm install mikser-io-render-eta
 
 ```js
 // mikser.config.js
+import { layouts } from 'mikser-io'
+import { renderEta } from 'mikser-io-render-eta'
+
 export default {
-  renderer: 'eta',
-  'render-eta': {
-    autoEscape: true,
-    autoTrim: ['slurp', 'nl']
-  }
+  plugins: [
+    layouts(),
+    renderEta({
+      autoEscape: true,
+      autoTrim: ['slurp', 'nl']
+    }),
+  ]
 }
 ```
 
-The `render-eta` config object is passed through to the Eta constructor — see [Eta config](https://eta.js.org/docs/api/configuration). `views` is set to the layouts folder and `cache` defaults to `true`.
+The options object is passed through to the Eta constructor — see [Eta config](https://eta.js.org/docs/api/configuration). `views` is set to the layouts folder and `cache` defaults to `true`.
 
 Templates render against the full render runtime as the data context, so any function exposed on `runtime` by another render-* plugin is callable directly:
 
