@@ -80,7 +80,87 @@ export async function render({ entity, runtime, state, track }) {
     }
 }
 
+// Static reference scan for `mikser-io-layouts`'s inspect() primitive.
+// Uses Eta's own tokenizer to walk a template source; surfaces what
+// variables, partials, and iterations the source mentions. This is the
+// authoring-time view; the runtime-precise answer (what the renderer
+// actually touched per render) lives in mikser-io's manifest refClosure.
+//
+// Eta tokens:
+//   string             plain text between tags
+//   { t: 'i', val }    escaped interpolation:    <%= EXPR %>
+//   { t: 'r', val }    unescaped interpolation:  <%~ EXPR %>
+//   { t: 'e', val }    execute (arbitrary JS):   <% CODE %>
+//
+// `i`/`r` tokens are output expressions — extract the leading
+// identifier path as a variable ref, plus surface include() /
+// includeAsync() calls embedded in them. `e` tokens contain arbitrary
+// JS, scanned by regex for `for (... of ...)` and the same include
+// calls.
+const ETA_IDENT_PATH = /([a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*)/
+export function parseReferences(source) {
+    if (typeof source !== 'string' || !source) {
+        return { variables: [], partials: [], iterations: [] }
+    }
+    let tokens
+    try {
+        const probe = new Eta({})
+        tokens = probe.parse(source)
+    } catch (err) {
+        return { variables: [], partials: [], iterations: [], parseError: err.message }
+    }
+
+    const variables  = new Set()
+    const partials   = new Set()
+    const iterations = []
+
+    function extractPath(expr) {
+        const m = ETA_IDENT_PATH.exec(String(expr ?? '').trim())
+        return m?.[1] ?? null
+    }
+
+    for (const tok of tokens) {
+        if (typeof tok === 'string') continue
+        const code = String(tok.val ?? '')
+
+        if (tok.t === 'i' || tok.t === 'r') {
+            // Output expression. Pull include() / includeAsync() calls
+            // as partials first; if the whole expression IS such a call
+            // skip variable extraction (the `include` ident isn't a
+            // user variable, it's the engine's partial entrypoint).
+            let isIncludeCall = false
+            for (const m of code.matchAll(/\b(?:include|includeAsync)\s*\(\s*['"]([^'"]+)['"]/g)) {
+                partials.add(m[1])
+                isIncludeCall = true
+            }
+            if (!isIncludeCall) {
+                const path = extractPath(code)
+                if (path) variables.add(path)
+            }
+            continue
+        }
+
+        if (tok.t === 'e') {
+            // Execute block — JS code. Surface for/of iterations and
+            // any embedded include() / includeAsync() calls.
+            for (const m of code.matchAll(/\bfor\s*\(?\s*(?:const|let|var)?\s*(\w+)\s+of\s+([a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*)/g)) {
+                iterations.push({ item: m[1], collection: m[2] })
+                variables.add(m[2])
+            }
+            for (const m of code.matchAll(/\b(?:include|includeAsync)\s*\(\s*['"]([^'"]+)['"]/g)) {
+                partials.add(m[1])
+            }
+        }
+    }
+
+    return {
+        variables:  Array.from(variables).sort(),
+        partials:   Array.from(partials).sort(),
+        iterations,
+    }
+}
+
 // v9 factory — ADR-0010.
 export function renderEta(options = {}) {
-    return { name: options.name ?? 'eta', options, load, render }
+    return { name: options.name ?? 'eta', options, load, render, parseReferences }
 }
