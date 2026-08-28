@@ -100,19 +100,44 @@ export async function render({ entity, runtime, state, track }) {
 const ETA_IDENT_PATH = /([a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*)/
 export function parseReferences(source) {
     if (typeof source !== 'string' || !source) {
-        return { variables: [], partials: [], iterations: [] }
+        return { variables: [], partials: [], iterations: [], assigns: [] }
     }
     let tokens
     try {
         const probe = new Eta({})
         tokens = probe.parse(source)
     } catch (err) {
-        return { variables: [], partials: [], iterations: [], parseError: err.message }
+        return { variables: [], partials: [], iterations: [], assigns: [], parseError: err.message }
     }
 
     const variables  = new Set()
-    const partials   = new Set()
+    // Keyed by name and merged across call sites, matching the other engines.
+    const partials   = new Map()
     const iterations = []
+
+    // `include('ui/btn', { label: it.hero.cta })` — the arguments a partial is
+    // called with, without which a contract cannot follow a key into the
+    // partial that consumes it.
+    //
+    // Best-effort, and unavoidably so: an eta execute block is arbitrary
+    // JavaScript with no AST to walk, so this reads a FLAT object literal of
+    // `key: path` pairs and nothing else. A computed key, a spread, a nested
+    // object or a call expression is skipped rather than guessed at — a
+    // contract that invents a dependency is worse than one that omits it and
+    // reports itself incomplete.
+    const INCLUDE_CALL = /\b(?:include|includeAsync)\s*\(\s*['"]([^'"]+)['"]\s*(?:,\s*\{([^{}]*)\})?/g
+    const ARG_PAIR = /([A-Za-z_$][\w$]*)\s*:\s*([a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*)\s*(?:,|$)/g
+
+    function addPartial(name, argsSource) {
+        const entry = partials.get(name) ?? { name, args: {}, aliases: [] }
+        for (const m of String(argsSource ?? '').matchAll(ARG_PAIR)) {
+            entry.args[m[1]] = m[2]
+            // Resolved in THIS template's scope before the partial runs, so it
+            // is a reference of this template too.
+            variables.add(m[2])
+        }
+        partials.set(name, entry)
+    }
 
     function extractPath(expr) {
         const m = ETA_IDENT_PATH.exec(String(expr ?? '').trim())
@@ -129,8 +154,8 @@ export function parseReferences(source) {
             // skip variable extraction (the `include` ident isn't a
             // user variable, it's the engine's partial entrypoint).
             let isIncludeCall = false
-            for (const m of code.matchAll(/\b(?:include|includeAsync)\s*\(\s*['"]([^'"]+)['"]/g)) {
-                partials.add(m[1])
+            for (const m of code.matchAll(INCLUDE_CALL)) {
+                addPartial(m[1], m[2])
                 isIncludeCall = true
             }
             if (!isIncludeCall) {
@@ -147,16 +172,21 @@ export function parseReferences(source) {
                 iterations.push({ item: m[1], collection: m[2] })
                 variables.add(m[2])
             }
-            for (const m of code.matchAll(/\b(?:include|includeAsync)\s*\(\s*['"]([^'"]+)['"]/g)) {
-                partials.add(m[1])
+            for (const m of code.matchAll(INCLUDE_CALL)) {
+                addPartial(m[1], m[2])
             }
         }
     }
 
     return {
         variables:  Array.from(variables).sort(),
-        partials:   Array.from(partials).sort(),
+        partials:   Array.from(partials.values()).sort((a, b) => a.name.localeCompare(b.name)),
         iterations,
+        // No file-scoped aliases are reported: an eta template is JavaScript,
+        // where a binding can be introduced by any statement and is scoped by
+        // blocks this parser cannot see. Present and empty so every engine
+        // returns the same shape and no caller has to branch on the engine.
+        assigns:    [],
     }
 }
 
