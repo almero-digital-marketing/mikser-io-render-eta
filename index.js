@@ -100,20 +100,45 @@ export async function render({ entity, runtime, state, track }) {
 const ETA_IDENT_PATH = /([a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*)/
 export function parseReferences(source) {
     if (typeof source !== 'string' || !source) {
-        return { variables: [], partials: [], iterations: [], assigns: [] }
+        return { variables: [], partials: [], iterations: [], assigns: [], optional: [] }
     }
     let tokens
     try {
         const probe = new Eta({})
         tokens = probe.parse(source)
     } catch (err) {
-        return { variables: [], partials: [], iterations: [], assigns: [], parseError: err.message }
+        return { variables: [], partials: [], iterations: [], assigns: [], optional: [], parseError: err.message }
     }
 
     const variables  = new Set()
     // Keyed by name and merged across call sites, matching the other engines.
     const partials   = new Map()
     const iterations = []
+    // Keys whose absence the template tolerates.
+    //
+    // Narrower than liquid's, and deliberately so. Liquid has an AST, so it
+    // can say that everything inside an `{% if %}` is guarded. An eta execute
+    // block is arbitrary JavaScript with no AST to walk, and inferring block
+    // structure from `if (…) {` by regex would be guessing at nesting — a
+    // contract that invents a dependency is worse than one that omits it.
+    //
+    // What IS unambiguous is the syntax whose whole purpose is tolerating
+    // absence: optional chaining and the default operators. Those are read
+    // exactly, and anything else stays required — so an eta contract errs
+    // toward calling a key required, which shows up as a gap to check rather
+    // than a silence to trust.
+    const optional = new Set()
+    // `it.hero?.tags` — the read cannot throw, so the key is tolerated.
+    const OPTIONAL_CHAIN = /\b([a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*)\?\.([a-zA-Z_$][\w$]*(?:[.?]*[a-zA-Z_$][\w$]*)*)/g
+    // `it.subtitle ?? ''` and `it.subtitle || 'x'` — a default IS the fallback.
+    const DEFAULTED = /\b([a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*)\s*(?:\?\?|\|\|)/g
+
+    function noteOptional(code) {
+        for (const m of String(code ?? '').matchAll(OPTIONAL_CHAIN)) {
+            optional.add(`${m[1]}.${m[2].replace(/\?\./g, '.')}`)
+        }
+        for (const m of String(code ?? '').matchAll(DEFAULTED)) optional.add(m[1])
+    }
 
     // `include('ui/btn', { label: it.hero.cta })` — the arguments a partial is
     // called with, without which a contract cannot follow a key into the
@@ -162,6 +187,7 @@ export function parseReferences(source) {
                 const path = extractPath(code)
                 if (path) variables.add(path)
             }
+            noteOptional(code)
             continue
         }
 
@@ -175,6 +201,7 @@ export function parseReferences(source) {
             for (const m of code.matchAll(INCLUDE_CALL)) {
                 addPartial(m[1], m[2])
             }
+            noteOptional(code)
         }
     }
 
@@ -187,6 +214,8 @@ export function parseReferences(source) {
         // blocks this parser cannot see. Present and empty so every engine
         // returns the same shape and no caller has to branch on the engine.
         assigns:    [],
+        // Proven tolerant of absence: optional chaining, or a default.
+        optional:   Array.from(optional).sort(),
     }
 }
 
