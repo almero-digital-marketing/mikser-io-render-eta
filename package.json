@@ -1,7 +1,7 @@
 {
   "name": "mikser-io-render-eta",
-  "version": "3.1.0",
-  "description": "",
+  "version": "3.1.1",
+  "description": "Eta renderer for Mikser. Renders entities whose layout uses the `.eta` template engine.",
   "main": "index.js",
   "type": "module",
   "scripts": {},
