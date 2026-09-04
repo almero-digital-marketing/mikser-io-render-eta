@@ -22,5 +22,8 @@
   },
   "dependencies": {
     "eta": "^4.6.0"
+  },
+  "devDependencies": {
+    "mikser-io": "^10.0.0"
   }
 }
