@@ -221,5 +221,5 @@ export function parseReferences(source) {
 
 // v9 factory — ADR-0010.
 export function renderEta(options = {}) {
-    return { name: options.name ?? 'eta', options, load, render, parseReferences }
+    return { name: options.name ?? 'eta', options, load, render, parseReferences, module: import.meta.url }
 }

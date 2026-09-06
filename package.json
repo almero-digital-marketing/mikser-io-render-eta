@@ -1,6 +1,6 @@
 {
   "name": "mikser-io-render-eta",
-  "version": "4.0.0",
+  "version": "11.0.1",
   "description": "Eta renderer for Mikser. Renders entities whose layout uses the `.eta` template engine.",
   "main": "index.js",
   "type": "module",
@@ -18,12 +18,12 @@
   },
   "homepage": "https://github.com/almero-digital-marketing/mikser-io-render-eta#readme",
   "peerDependencies": {
-    "mikser-io": "^10.0.0"
+    "mikser-io": "^11.0.1"
   },
   "dependencies": {
     "eta": "^4.6.0"
   },
   "devDependencies": {
-    "mikser-io": "^10.0.0"
+    "mikser-io": "^11.0.1"
   }
 }
